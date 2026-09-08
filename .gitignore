@@ -1,0 +1,40 @@
+build/
+bin/
+obj/
+*.user
+*.suo
+core/*.zip
+core/release-assets.html
+
+# Flutter/Dart generated state. These files may contain absolute local paths.
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# Local credentials and environment overrides.
+.env
+.env.*
+!.env.example
+credentials.dat
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.log
+
+# Core runtime state can contain account-specific data.
+.oix_*
+runtime.yaml
+runtime.next.yaml
+runtime.last-good.yaml
+bootstrap.yaml
+
+# The third-party core is kept locally and packaged separately from Git history.
+core/*.exe
+
+# Secret scanner output must never be committed.
+gitleaks-report.*
+secret-scan-report.*

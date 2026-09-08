@@ -1,0 +1,41 @@
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>OixNodeHelper</RootNamespace>
+    <AssemblyName>OixNodeHelper</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="src\AppController.cs" />
+    <Compile Include="src\CoreClient.cs" />
+    <Compile Include="src\CoreSupervisor.cs" />
+    <Compile Include="src\HostBridge.cs" />
+    <Compile Include="src\HostProgram.cs" />
+    <Compile Include="src\Models.cs" />
+    <Compile Include="src\NodeMapper.cs" />
+    <Compile Include="src\Program.cs" />
+    <Compile Include="src\ProviderRenderer.cs" />
+    <Compile Include="src\ProviderServer.cs" />
+    <Compile Include="src\RuntimeConfigBuilder.cs" />
+    <Compile Include="src\SelfTest.cs" />
+    <Compile Include="src\SettingsForm.cs" />
+    <Compile Include="src\Storage.cs" />
+    <Compile Include="src\TrayApplicationContext.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -1,0 +1,7 @@
+# Git hooks require an LF shebang even when contributors use Git for Windows.
+.githooks/* text eol=lf
+*.sh text eol=lf
+
+# Keep automation files stable across platforms.
+*.yml text eol=lf
+*.yaml text eol=lf

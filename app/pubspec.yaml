@@ -1,0 +1,30 @@
+name: oix_node_helper
+description: Material 3 desktop client for the OixNodeHelper background host.
+publish_to: none
+version: 0.3.0+300
+
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  animations: ^2.1.1
+  dynamic_color: ^1.8.1
+  file_picker: ^10.3.3
+  flutter_riverpod: ^3.0.0
+  path: ^1.9.0
+  shared_preferences: ^2.5.3
+  tray_manager: ^0.5.2
+  url_launcher: ^6.3.2
+  window_manager: ^0.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

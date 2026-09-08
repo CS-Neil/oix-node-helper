@@ -1,0 +1,28 @@
+# 将下面这一段合并到你自己维护的 FlClash/Mihomo 配置中。
+# 节点由本机助手更新；策略组与规则仍由这个静态配置维护，不会被订阅覆盖。
+
+proxy-providers:
+  oixcloud-local:
+    type: http
+    url: http://127.0.0.1:6172/clash
+    path: ./providers/oixcloud-local.yaml
+    interval: 300
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: OIX-手动选择
+    type: select
+    use:
+      - oixcloud-local
+  - name: OIX-自动选择
+    type: url-test
+    use:
+      - oixcloud-local
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+
+rules:
+  - MATCH,OIX-手动选择
