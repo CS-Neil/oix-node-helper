@@ -109,6 +109,7 @@ class _Dashboard extends ConsumerWidget {
                 onTap: () =>
                     ref.read(hostActionsProvider.notifier).openDataFolder(),
               ),
+              if (health.coreDegraded) _CoreLoopCard(health: health),
               if (health.lastError.isNotEmpty)
                 _ErrorCard(message: health.lastError),
             ]),
@@ -296,6 +297,50 @@ class _ActionCard extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// Shown when the core's socket, handle or memory use runs away. The usual
+/// cause is the core's own outbound traffic being routed back into the helper
+/// by a FlClash TUN, which drains the Windows ephemeral port pool and makes
+/// every local node report a timeout.
+class _CoreLoopCard extends StatelessWidget {
+  const _CoreLoopCard({required this.health});
+  final HealthState health;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final critical = health.coreHealth == 'Critical';
+    return ContentCard(
+      color: critical ? scheme.errorContainer : scheme.tertiaryContainer,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.loop_rounded,
+            color: critical ? scheme.onErrorContainer : scheme.onTertiaryContainer,
+          ),
+          const Spacer(),
+          Text(
+            critical ? 'Core 资源告急' : 'Core 资源异常',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '连接 ${health.coreConnections} · 句柄 ${health.coreHandles} · '
+            '内存 ${health.coreMemoryMb} MB\n'
+            '请在 FlClash 规则最前面加入 PROCESS-NAME,mihomo-oix.exe,DIRECT。',
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color:
+                  critical ? scheme.onErrorContainer : scheme.onTertiaryContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ErrorCard extends StatelessWidget {

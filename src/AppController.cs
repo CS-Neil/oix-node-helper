@@ -32,6 +32,11 @@ namespace OixNodeHelper
         private string _lastError = "";
         private string _stage = "正在启动";
         private bool _coreReachable;
+        private CoreHealthSample _coreHealth = new CoreHealthSample();
+        private int _criticalSamples;
+        private DateTime _lastWatchdogRestartUtc = DateTime.MinValue;
+        private DateTime _lastDegradedWarningUtc = DateTime.MinValue;
+        private Timer _healthTimer;
         private bool _disposed;
 
         public event EventHandler StatusChanged;
@@ -77,6 +82,7 @@ namespace OixNodeHelper
             _server.Start(_settings.ProviderPort);
             ApplyAutoStart(_settings);
             _timer = new Timer(delegate { RefreshAsync(); }, null, 1000, Timeout.Infinite);
+            _healthTimer = new Timer(delegate { SampleCoreHealth(); }, null, HealthSampleIntervalMs, HealthSampleIntervalMs);
         }
 
         public void SaveConfiguration(AppSettings settings, CredentialBundle credentials)
@@ -198,6 +204,7 @@ namespace OixNodeHelper
                 }
                 JsonFiles.Save(_paths.NodeCacheFile, mapped);
                 _log.Info("Node refresh completed: " + mapped.Count + " node(s).");
+                SampleCoreHealth();
                 succeeded = true;
             }
             catch (Exception ex)
@@ -215,14 +222,26 @@ namespace OixNodeHelper
             }
         }
 
+        /// <summary>
+        /// A successful poll waits exactly the configured interval. The hour cap
+        /// belongs to the failure backoff only: applying it to the success path
+        /// silently turned any interval above 3600s into one hour. After a failure
+        /// the capped backoff can land sooner than a long interval, which is what
+        /// we want, because the last good snapshot is still being served.
+        /// </summary>
+        internal static long NextRefreshSeconds(int pollSeconds, bool succeeded, int failureCount)
+        {
+            if (succeeded) return pollSeconds;
+            long multiplier = 1L << Math.Min(Math.Max(failureCount, 0), 6);
+            return Math.Min(3600L, pollSeconds * multiplier);
+        }
+
         private void ScheduleNextRefresh(bool succeeded)
         {
             if (_disposed || _timer == null) return;
             if (succeeded) _failureCount = 0;
             else _failureCount = Math.Min(_failureCount + 1, 6);
-            AppSettings settings = Settings;
-            long multiplier = succeeded ? 1 : 1L << _failureCount;
-            long seconds = Math.Min(3600L, settings.PollSeconds * multiplier);
+            long seconds = NextRefreshSeconds(Settings.PollSeconds, succeeded, _failureCount);
             int jitter = succeeded ? 0 : new Random(unchecked(Environment.TickCount + _failureCount)).Next(0, Math.Max(2, (int)(seconds / 10)));
             _timer.Change((seconds + jitter) * 1000L, Timeout.Infinite);
         }
@@ -367,10 +386,69 @@ namespace OixNodeHelper
             {
                 return _nodes.Select(delegate(NodeInfo n)
                 {
-                    return new NodeInfo { Name = n.Name, Type = n.Type, Port = n.Port };
+                    return new NodeInfo { Name = n.Name, Type = n.Type, Port = n.Port, Udp = n.Udp };
                 }).ToList();
             }
         }
+        private const int HealthSampleIntervalMs = 60000;
+        private const int CriticalSamplesBeforeRestart = 3;
+        private const int WatchdogRestartCooldownMinutes = 30;
+        private const int DegradedWarningCooldownMinutes = 15;
+
+        /// <summary>
+        /// Samples the supervised core and reacts to the runaway socket growth that
+        /// precedes ephemeral port exhaustion. Left unattended the core keeps its
+        /// listeners open while every new dial hangs, which surfaces in FlClash as
+        /// a timeout on every node this helper published.
+        /// </summary>
+        private void SampleCoreHealth()
+        {
+            if (_disposed) return;
+            int pid = _supervisor.ProcessId;
+            if (pid <= 0) return;
+
+            CoreHealthSample sample;
+            try { sample = CoreHealthMonitor.Sample(pid); }
+            catch { return; }
+
+            lock (_sync) _coreHealth = sample;
+
+            if (sample.Level == CoreHealthLevel.Healthy)
+            {
+                _criticalSamples = 0;
+                return;
+            }
+
+            string detail = "core connections=" + sample.Connections + ", handles=" + sample.Handles +
+                ", memory=" + sample.MemoryMb + "MB, ephemeral ports in use=" + sample.EphemeralPortsInUse;
+            DateTime now = DateTime.UtcNow;
+
+            if (sample.Level == CoreHealthLevel.Degraded)
+            {
+                _criticalSamples = 0;
+                if ((now - _lastDegradedWarningUtc).TotalMinutes >= DegradedWarningCooldownMinutes)
+                {
+                    _lastDegradedWarningUtc = now;
+                    _log.Error("Core resource usage is abnormal (" + detail + "). This usually means the core outbound " +
+                        "traffic is being routed back into the helper: check that the FlClash rules start with " +
+                        "PROCESS-NAME,mihomo-oix.exe,DIRECT.");
+                }
+                return;
+            }
+            // A refresh already restarts or reloads the core, so never stack a watchdog
+            // restart on top of one that is in flight.
+            if (Interlocked.CompareExchange(ref _refreshing, 0, 0) != 0) return;
+
+            _criticalSamples++;
+            if (_criticalSamples < CriticalSamplesBeforeRestart) return;
+            if ((now - _lastWatchdogRestartUtc).TotalMinutes < WatchdogRestartCooldownMinutes) return;
+
+            _criticalSamples = 0;
+            _lastWatchdogRestartUtc = now;
+            _log.Error("Restarting the core because its resource usage stayed critical (" + detail + ").");
+            RestartAsync();
+        }
+
 
         public HealthDocument GetHealth()
         {
@@ -387,7 +465,12 @@ namespace OixNodeHelper
                     LastError = _lastError,
                     Version = AppVersion,
                     Stage = _stage,
-                    ConsecutiveEmptyRefreshes = _consecutiveEmptyRefreshes
+                    ConsecutiveEmptyRefreshes = _consecutiveEmptyRefreshes,
+                    CoreHealth = _coreHealth.Level.ToString(),
+                    CoreConnections = _coreHealth.Connections,
+                    CoreHandles = _coreHealth.Handles,
+                    CoreMemoryMb = _coreHealth.MemoryMb,
+                    EphemeralPortsInUse = _coreHealth.EphemeralPortsInUse
                 };
             }
         }
@@ -426,6 +509,7 @@ namespace OixNodeHelper
             if (settings.ProviderPort < 1024 || settings.ProviderPort > 65535) throw new ArgumentException("Provider port is invalid.");
             if (settings.BaseNodePort < 1024 || settings.BaseNodePort > 65000) throw new ArgumentException("Base node port is invalid.");
             if (settings.MaxNodes < 1 || settings.MaxNodes > 500) throw new ArgumentException("Max nodes must be between 1 and 500.");
+            if (settings.PollSeconds < 120 || settings.PollSeconds > 86400) throw new ArgumentException("Poll seconds must be between 120 and 86400.");
             if (settings.PortRetentionDays < 1 || settings.PortRetentionDays > 365) throw new ArgumentException("Port retention must be between 1 and 365 days.");
             if (settings.EmptyRefreshThreshold < 1 || settings.EmptyRefreshThreshold > 10) throw new ArgumentException("Empty refresh threshold must be between 1 and 10.");
             if (settings.BaseNodePort + settings.MaxNodes >= 65535) throw new ArgumentException("Node port range exceeds 65535.");
@@ -476,6 +560,7 @@ namespace OixNodeHelper
             if (_disposed) return;
             _disposed = true;
             if (_timer != null) _timer.Dispose();
+            if (_healthTimer != null) _healthTimer.Dispose();
             _server.Dispose();
             _supervisor.Dispose();
         }

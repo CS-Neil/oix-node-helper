@@ -33,6 +33,8 @@ app\build\windows\x64\runner\Release
 
 实际合并时，保留自己的 `proxy-groups` 和 `rules`；只增加 `proxy-providers.oixcloud-local`，并让相关策略组通过 `use: [oixcloud-local]` 引用它。
 
+如果 FlClash 开启了 TUN，示例文件里那三条防回环规则必须放在自己规则的最前面，否则节点会成批 timeout，原因见[故障排查](#故障排查flclash-里节点全部-timeout)。
+
 关闭主窗口会把程序隐藏到托盘，并继续运行 Host 和 Core。只有托盘菜单中的“退出”会关闭 GUI、Host 和 Core。
 
 ## 界面
@@ -68,6 +70,9 @@ FlClash 中由用户维护的策略组与规则
 - 候选配置先由官方核心执行 `-t` 验证，再通过 Controller API 热加载。
 - 热加载后检查所有节点监听端口；失败时自动恢复上一份可用配置。
 - 每个本地端口通过隐藏策略组绑定一个 Provider 节点；运行配置结构升级时按 schema 自动重建。
+- 核心使用自带的 DoH 解析器，不经过 Windows 系统解析器，避免 FlClash 的 fake-ip 把假地址喂给核心自己的上游。
+- 监控核心的连接数、句柄数、内存和系统临时端口占用；异常时告警，持续告急时自动重启核心。
+- Provider 里的 `udp` 跟随节点实际能力，不再对所有节点一律声明支持，避免 UDP 与 QUIC 静默超时。
 - 节点源连续返回空列表前保留旧快照，避免临时故障清空节点。
 - 消失节点的端口默认保留 14 天，端口不足时才回收最久未使用的记录。
 - Token 和 Controller Secret 由 Windows DPAPI `CurrentUser` 加密保存。
@@ -80,11 +85,55 @@ FlClash 中由用户维护的策略组与规则
 
 Token 通过官方核心的 `-oix-token` 参数传入，因此同一 Windows 用户下、具有进程检查权限的软件仍可能读取核心命令行。不要在不可信的 Windows 账户或共享会话中运行。
 
+## 故障排查：FlClash 里节点全部 timeout
+
+症状是本助手拉取的节点在 FlClash 中成批显示 timeout，开机越久越严重，重启后短暂恢复，而单独测试某个本地端口却是正常的：
+
+```bash
+curl -s -o /dev/null -w "%{http_code} %{time_total}\n" --max-time 12 --noproxy '*' \
+  --proxy socks5h://127.0.0.1:7201 https://www.gstatic.com/generate_204
+```
+
+根因是流量回环耗尽了 Windows 的临时端口，而不是节点本身有问题。
+
+FlClash 开启 TUN（`auto-route`）并把系统 DNS 指向自己（fake-ip）之后：
+
+1. `mihomo-oix.exe` 是独立进程，不在 FlClash 的自身放行范围内。
+2. 它解析自己上游的域名时会拿到 `198.18.x.x` 这样的假地址。
+3. 拨号这个假地址会被 TUN 抓走，还原成域名后重新进入 FlClash 的规则链。
+4. 命中使用本地 provider 的策略组后又回到 `127.0.0.1:72xx`，也就是回到同一个核心。
+5. 回环里的连接永远握不上手也永远不关闭，持续吃掉临时端口（49152-65535，共 16384 个）。
+6. 端口耗尽后所有新连接挂起，FlClash 上就是本地节点全部 timeout。
+
+自查两条命令：
+
+```powershell
+# 返回 198.18.x.x 说明系统解析已被 fake-ip 接管
+Resolve-DnsName oixcloud.com -Type A
+
+# 接近 16384 说明临时端口已经耗尽
+(Get-NetTCPConnection | Where-Object LocalPort -ge 49152).Count
+```
+
+助手侧已经做了两件事：核心使用自带的 DoH 解析器（IP 字面量上游，不经过 Windows 系统解析器，也绕开 `tun.dns-hijack` 对 UDP 53 的拦截），并在核心的连接数、句柄数或内存异常增长时告警、必要时自动重启核心。要更换上游解析器，改 `src/RuntimeConfigBuilder.cs` 顶部的 `BootstrapNameservers` 与 `SecureNameservers` 两个常量。
+
+最后一步必须在 FlClash 侧完成：把下面三条放在自己 profile 规则的**最前面**，并确认「查找进程」为 `always`。
+
+```yaml
+rules:
+  - PROCESS-NAME,mihomo-oix.exe,DIRECT
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR6,::1/128,DIRECT,no-resolve
+  # 你原有的规则
+```
+
+改完后重启一次助手，让核心释放已经泄漏的套接字。
+
 ## 本地接口
 
 | 路径 | 用途 |
 |---|---|
-| `GET /health` | 阶段、核心状态、节点数、上次成功时间和错误 |
+| `GET /health` | 阶段、核心状态、节点数、上次成功时间、错误和核心资源指标 |
 | `GET /clash` | Mihomo/Clash `proxy-provider` YAML |
 | `GET /list` | Surge external proxy 列表 |
 | `GET /api/nodes` | 节点名称与本机端口 JSON |

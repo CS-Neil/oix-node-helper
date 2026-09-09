@@ -78,3 +78,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 - 关闭到托盘时不能关闭 Host；只有托盘“退出”调用 `host.shutdown`。
 - 正常联调前确认旧 WinForms 实例没有占用默认 Provider 端口 6172。
 - FlClash 只作为视觉和交互参考，不复制其 GPL Dart 组件或品牌素材。
+
+## 2026-09-09：FlClash 节点 timeout 的定位结论
+
+现场取证：`mihomo-oix.exe` 运行 8 小时后持有 11,140 个套接字、852 MB 内存、10,783 个句柄，其中约 9,400 个处于 `Bound`（已发起、从未握手成功、也从未关闭），增速约 2,000/小时；`FlClashCore.exe` 另持 4,573 个。系统内 `LocalPort >= 49152` 的占用达 16,046，而 Windows 临时端口池只有 16,384 个，另有约 760 个被 Hyper-V 保留——端口池已经耗尽。此时单个本地端口仍可用（7201/7210/7230/7250/7270 均返回 HTTP 204，0.5–1.3 s），但 FlClash 成批测速会全部 timeout。
+
+机制：助手核心当时的 `dns: enable: false` 让它使用 Windows 系统解析器，而 FlClash 把系统 DNS 指向自己的 TUN 并启用 fake-ip，于是 `oixcloud.com` 解析成 198.18.0.12、`www.gstatic.com` 解析成 198.18.0.8。核心拨号这些假地址被 TUN 抓走，还原域名后重新进入 FlClash 规则链；规则链里没有按进程放行 mihomo-oix，命中的策略组又 `use:` 本地 provider，于是回到 `127.0.0.1:72xx`，闭环成立。
+
+已落地的修复：核心改用 IP 字面量 DoH 自解析（普通 UDP 53 会被 `tun.dns-hijack` 拦截，所以不能用）；`CoreHealthMonitor` 监控套接字/句柄/内存/临时端口并在持续告急时重启核心；轮询默认从 60 s 提高到 300 s，并对已持久化的低值做一次性迁移；示例配置与 README 写明必须置顶的三条防回环规则。
+
+闭环的最后一环仍在用户侧：FlClash profile 必须把 `PROCESS-NAME,mihomo-oix.exe,DIRECT` 放在规则最前面。

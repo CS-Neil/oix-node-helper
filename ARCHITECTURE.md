@@ -51,7 +51,8 @@ HostBridge 支持以下方法：
 
 - `CoreSupervisor`：通过公开的 `-oix-token`、`-oix-provider-name` 参数启动官方核心；执行配置预检并用 Job Object 管理生命周期。
 - `CoreClient`：使用标准 Controller API 刷新 Provider、从 `/providers/proxies` 的 `oixCloud` Provider 读取节点、设置 `/oix/options`，并热加载 `/configs?force=true`。全局 `/proxies` 不作为节点来源。
-- `RuntimeConfigBuilder`：从零生成助手专用最小 YAML；为每个稳定端口生成隐藏 `select` 组，通过 `use: [oixCloud]` 引入 Provider，再让 listener 引用该组。运行配置带 schema 标记。
+- `RuntimeConfigBuilder`：从零生成助手专用最小 YAML；为每个稳定端口生成隐藏 `select` 组，通过 `use: [oixCloud]` 引入 Provider，再让 listener 引用该组。运行配置带 schema 标记。配置里包含核心自己的 DoH 解析器：核心绝不使用 Windows 系统解析器，否则运行中的 FlClash TUN 会用 fake-ip 假地址回答核心对自己上游的解析，把流量绕回助手形成回环。上游写成 IP 字面量的 DoH，因为 `tun.dns-hijack` 会拦截经 TUN 出去的 UDP 53。
+- `CoreHealthMonitor`：通过 `GetExtendedTcpTable` 采样核心的套接字数、句柄数、内存和系统临时端口占用。回环会持续泄漏永远握不上手的连接，直到临时端口耗尽、所有新连接挂起；监听端口此时仍在，所以这些指标是唯一的早期信号。异常时告警，连续告急时由 `AppController` 走既有重启路径重启核心。
 - `NodeMapper`：保存节点名到本地端口的映射，支持保留期和最久未使用回收。
 - `ProviderServer`：只绑定回环地址，发布只读 Provider，并对管理操作鉴权。
 - `CredentialStore`：使用 DPAPI `CurrentUser` 加密 Token 与 Controller Secret。

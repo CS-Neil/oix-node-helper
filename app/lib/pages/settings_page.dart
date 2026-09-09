@@ -213,7 +213,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                   _NumberField(
                                     controller: _pollSeconds,
                                     label: '刷新间隔（秒）',
-                                    min: 15,
+                                    min: 120,
                                     max: 86400,
                                   ),
                                   _NumberField(

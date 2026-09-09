@@ -117,7 +117,10 @@ namespace OixNodeHelper
             if (value.ProviderPort < 1024 || value.ProviderPort > 65535) value.ProviderPort = 6172;
             if (value.BaseNodePort < 1024 || value.BaseNodePort > 65435) value.BaseNodePort = 7200;
             if (value.MaxNodes < 1 || value.MaxNodes > 500) value.MaxNodes = 100;
-            if (value.PollSeconds < 15 || value.PollSeconds > 86400) value.PollSeconds = 60;
+            // Below 120s the helper forces a full upstream subscription pull every tick,
+            // which is unnecessary and keeps feeding new connections to any routing
+            // loop. Persisted values under the floor are migrated once.
+            if (value.PollSeconds < 120 || value.PollSeconds > 86400) value.PollSeconds = 300;
             if (value.CorePath == null) value.CorePath = "";
             if (value.IncludeRegex == null) value.IncludeRegex = "";
             if (value.ExcludeRegex == null) value.ExcludeRegex = "";

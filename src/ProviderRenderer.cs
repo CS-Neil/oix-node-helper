@@ -18,7 +18,7 @@ namespace OixNodeHelper
                 yaml.AppendLine("    type: socks5");
                 yaml.AppendLine("    server: 127.0.0.1");
                 yaml.AppendLine("    port: " + node.Port);
-                yaml.AppendLine("    udp: true");
+                yaml.AppendLine("    udp: " + (node.Udp ? "true" : "false"));
             }
             return yaml.ToString();
         }
@@ -32,7 +32,7 @@ namespace OixNodeHelper
                 result.Append(EscapeSurgeName(node.Name));
                 result.Append(" = socks5, 127.0.0.1, ");
                 result.Append(node.Port);
-                result.AppendLine(", udp-relay=true");
+                result.AppendLine(node.Udp ? ", udp-relay=true" : ", udp-relay=false");
             }
             return result.ToString();
         }

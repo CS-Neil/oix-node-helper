@@ -23,6 +23,7 @@
   <ItemGroup>
     <Compile Include="src\AppController.cs" />
     <Compile Include="src\CoreClient.cs" />
+    <Compile Include="src\CoreHealthMonitor.cs" />
     <Compile Include="src\CoreSupervisor.cs" />
     <Compile Include="src\HostBridge.cs" />
     <Compile Include="src\HostProgram.cs" />

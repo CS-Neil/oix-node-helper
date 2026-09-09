@@ -59,7 +59,7 @@ namespace OixNodeHelper
                 if (include != null && !include.IsMatch(name)) continue;
                 if (exclude != null && exclude.IsMatch(name)) continue;
                 if (!names.Add(name)) continue;
-                result.Add(new NodeInfo { Name = name, Type = type });
+                result.Add(new NodeInfo { Name = name, Type = type, Udp = GetBool(proxy, "udp", true) });
             }
 
             result.Sort(delegate(NodeInfo a, NodeInfo b)
@@ -166,6 +166,14 @@ namespace OixNodeHelper
         {
             object value;
             return source.TryGetValue(key, out value) && value != null ? Convert.ToString(value) : "";
+        }
+
+        private static bool GetBool(Dictionary<string, object> source, string key, bool fallback)
+        {
+            object value;
+            if (!source.TryGetValue(key, out value) || value == null) return fallback;
+            try { return Convert.ToBoolean(value); }
+            catch { return fallback; }
         }
 
         private static string Request(string url, string method, string secret, byte[] body, int timeout = 5000)

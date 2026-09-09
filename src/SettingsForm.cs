@@ -80,7 +80,7 @@ namespace OixNodeHelper
             ConfigureNumber(_providerPort, 1024, 65535);
             ConfigureNumber(_baseNodePort, 1024, 65000);
             ConfigureNumber(_maxNodes, 1, 500);
-            ConfigureNumber(_pollSeconds, 15, 86400);
+            ConfigureNumber(_pollSeconds, 120, 86400);
             ConfigureNumber(_portRetentionDays, 1, 365);
             ConfigureNumber(_emptyRefreshThreshold, 1, 10);
             AddRow(fields, ref row, "Provider 端口", _providerPort, null);

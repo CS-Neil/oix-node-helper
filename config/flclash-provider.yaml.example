@@ -9,8 +9,11 @@ proxy-providers:
     interval: 300
     health-check:
       enable: true
+      # lazy 只在策略组真正被使用时才测速。关闭它会让每个 use: 该 provider
+      # 的策略组各自对全部节点发起一轮并发拨号，几十个节点会形成成批冲击。
+      lazy: true
       url: https://www.gstatic.com/generate_204
-      interval: 300
+      interval: 600
 
 proxy-groups:
   - name: OIX-手动选择
@@ -22,7 +25,24 @@ proxy-groups:
     use:
       - oixcloud-local
     url: https://www.gstatic.com/generate_204
-    interval: 300
+    interval: 600
 
+# 前三条必须放在所有规则的最前面，否则会出现节点全部 timeout。
+#
+# FlClash 开启 TUN（auto-route）后会接管本机所有进程的出站流量，其中包括
+# mihomo-oix.exe 自己。此时 mihomo-oix 连接自己上游的流量会被 TUN 抓走、
+# 重新进入 FlClash 的规则链；一旦命中使用本 provider 的策略组，就会回到
+# 127.0.0.1:72xx，也就是回到同一个核心，形成：
+#
+#   FlClash -> 127.0.0.1:72xx -> mihomo-oix -> TUN -> FlClash -> ...
+#
+# 这种回环里的连接永远握不上手，也就永远不会被关闭，会持续吃掉 Windows 的
+# 临时端口（49152-65535，共 16384 个）。端口耗尽后所有新连接都会挂起，
+# FlClash 上的表现就是这批本地节点全部 timeout。
+#
+# PROCESS-NAME 规则需要 FlClash 的「查找进程」为 always。
 rules:
+  - PROCESS-NAME,mihomo-oix.exe,DIRECT
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR6,::1/128,DIRECT,no-resolve
   - MATCH,OIX-手动选择

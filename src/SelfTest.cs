@@ -19,6 +19,9 @@ namespace OixNodeHelper
             TestMapper(failures);
             TestDpapi(failures);
             TestServer(failures);
+            TestCoreHealthThresholds(failures);
+            TestPollSecondsMigration(failures);
+            TestRefreshSchedule(failures);
             TestCoreValidation(failures);
             if (failures.Count == 0)
             {
@@ -46,6 +49,17 @@ namespace OixNodeHelper
                 "route group does not use the oixCloud provider", failures);
             Assert(clean.Contains("default-selected: 'Node ''A'''"), "route group node selection escaping is incorrect", failures);
             Assert(clean.Contains("proxy: 'oix-route-7200'"), "listener does not reference its route group", failures);
+            // The core must resolve on its own. With DNS disabled it falls back to the
+            // Windows resolver, which a running FlClash TUN answers with fake-ip
+            // addresses for the core's own upstream, looping traffic back into the helper.
+            Assert(clean.Contains("dns:\r\n  enable: true") || clean.Contains("dns:\n  enable: true"),
+                "core DNS is not enabled", failures);
+            Assert(clean.Contains("enhanced-mode: normal"), "core DNS must never use fake-ip", failures);
+            Assert(clean.IndexOf("\n  listen:", StringComparison.Ordinal) < 0,
+                "core DNS must not open a listener", failures);
+            Assert(clean.Contains("nameserver:\r\n    - 'https://") || clean.Contains("nameserver:\n    - 'https://"),
+                "core upstream resolvers must use DoH so tun dns-hijack cannot intercept them", failures);
+            Assert(!clean.Contains("'udp://"), "plain UDP resolvers are hijacked by tun dns-hijack", failures);
             Assert(RuntimeConfigBuilder.QuoteYaml("a'b") == "'a''b'", "YAML quoting is incorrect", failures);
             try { File.Delete(path); } catch { }
         }
@@ -54,17 +68,26 @@ namespace OixNodeHelper
         {
             List<NodeInfo> nodes = new List<NodeInfo>
             {
-                new NodeInfo { Name = "Hong Kong '01'", Type = "VLESS", Port = 7200 }
+                new NodeInfo { Name = "Hong Kong '01'", Type = "VLESS", Port = 7200 },
+                new NodeInfo { Name = "TCP Only", Type = "Snell", Port = 7201, Udp = false }
             };
             string yaml = ProviderRenderer.RenderClash(nodes);
             Assert(yaml.Contains("name: 'Hong Kong ''01'''"), "provider name escaping is incorrect", failures);
             Assert(yaml.Contains("port: 7200"), "provider port is missing", failures);
+            // Advertising UDP a node does not have turns into silent QUIC and
+            // proxied-DNS stalls instead of a clean failure.
+            Assert(yaml.Contains("port: 7200\r\n    udp: true") || yaml.Contains("port: 7200\n    udp: true"),
+                "a UDP capable node was not advertised as such", failures);
+            Assert(yaml.Contains("port: 7201\r\n    udp: false") || yaml.Contains("port: 7201\n    udp: false"),
+                "a TCP only node was advertised as UDP capable", failures);
+            Assert(ProviderRenderer.RenderSurge(nodes).Contains("udp-relay=false"),
+                "a TCP only node was advertised as UDP capable in the Surge list", failures);
         }
 
         private static void TestCoreProviderParsing(List<string> failures)
         {
             string json = "{\"providers\":{\"default\":{\"proxies\":[{\"name\":\"DIRECT\",\"type\":\"Direct\"}]}," +
-                "\"oixCloud\":{\"proxies\":[{\"name\":\"Node B\",\"type\":\"Snell\"}," +
+                "\"oixCloud\":{\"proxies\":[{\"name\":\"Node B\",\"type\":\"Snell\",\"udp\":false}," +
                 "{\"name\":\"PASS-RULE\",\"type\":\"PassRule\"},{\"name\":\"Node A\",\"type\":\"Snell\"}]}}}";
             try
             {
@@ -72,6 +95,8 @@ namespace OixNodeHelper
                 Assert(nodes.Count == 2, "provider parsing did not return only real oixCloud nodes", failures);
                 Assert(nodes.Count == 2 && nodes[0].Name == "Node A" && nodes[1].Name == "Node B",
                     "provider nodes were not sorted correctly", failures);
+                Assert(nodes.Count == 2 && nodes[0].Udp, "a node without a udp field must default to UDP capable", failures);
+                Assert(nodes.Count == 2 && !nodes[1].Udp, "the node UDP capability was not read from the core", failures);
             }
             catch (Exception ex) { failures.Add("provider parsing threw: " + ex.Message); }
         }
@@ -185,6 +210,66 @@ namespace OixNodeHelper
                 server.Dispose();
                 try { if (File.Exists(logPath)) File.Delete(logPath); } catch { }
             }
+        }
+
+        private static void TestCoreHealthThresholds(List<string> failures)
+        {
+            Assert(CoreHealthMonitor.Evaluate(120, 800, 90, 2000) == CoreHealthLevel.Healthy,
+                "a quiet core was not reported healthy", failures);
+            Assert(CoreHealthMonitor.Evaluate(CoreHealthMonitor.DegradedConnections, 800, 90, 2000) == CoreHealthLevel.Degraded,
+                "socket growth was not reported as degraded", failures);
+            Assert(CoreHealthMonitor.Evaluate(120, 800, CoreHealthMonitor.DegradedMemoryMb, 2000) == CoreHealthLevel.Degraded,
+                "memory growth was not reported as degraded", failures);
+            Assert(CoreHealthMonitor.Evaluate(CoreHealthMonitor.CriticalConnections, 800, 90, 2000) == CoreHealthLevel.Critical,
+                "runaway sockets were not reported as critical", failures);
+            // The measured failure: the ephemeral port pool runs dry and every new
+            // dial hangs, which FlClash reports as a timeout on every local node.
+            Assert(CoreHealthMonitor.Evaluate(120, 800, 90, CoreHealthMonitor.CriticalEphemeralPorts) == CoreHealthLevel.Critical,
+                "ephemeral port exhaustion was not reported as critical", failures);
+        }
+
+        private static void TestPollSecondsMigration(List<string> failures)
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "OixNodeHelper-Poll-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                SettingsStore store = new SettingsStore(new AppPaths(dir));
+                AppSettings settings = AppSettings.CreateDefault();
+                Assert(settings.PollSeconds == 300, "default poll interval was not raised", failures);
+
+                settings.PollSeconds = 60;
+                store.Save(settings);
+                Assert(store.Load().PollSeconds == 300, "a persisted 60s poll interval was not migrated", failures);
+
+                settings.PollSeconds = 900;
+                store.Save(settings);
+                Assert(store.Load().PollSeconds == 900, "a valid poll interval was not preserved", failures);
+
+                settings.PollSeconds = 21600;
+                store.Save(settings);
+                Assert(store.Load().PollSeconds == 21600, "a six hour poll interval was not preserved", failures);
+            }
+            catch (Exception ex) { failures.Add("poll interval migration threw: " + ex.Message); }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+        }
+
+        private static void TestRefreshSchedule(List<string> failures)
+        {
+            // The hour cap used to apply to the success path too, so any interval
+            // above 3600s silently ran hourly instead.
+            Assert(AppController.NextRefreshSeconds(21600, true, 0) == 21600,
+                "a six hour interval was clamped on the success path", failures);
+            Assert(AppController.NextRefreshSeconds(300, true, 0) == 300,
+                "the configured interval was not honoured after a success", failures);
+            Assert(AppController.NextRefreshSeconds(300, false, 1) == 600,
+                "the failure backoff did not double", failures);
+            Assert(AppController.NextRefreshSeconds(300, false, 6) == 3600,
+                "the failure backoff was not capped at one hour", failures);
+            // After a failure a long interval retries sooner, not later: the last
+            // good snapshot keeps serving while the retry is pending.
+            Assert(AppController.NextRefreshSeconds(21600, false, 1) == 3600,
+                "a long interval did not retry within the hour cap after a failure", failures);
         }
 
         private static void TestCoreValidation(List<string> failures)

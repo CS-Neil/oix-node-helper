@@ -229,7 +229,12 @@ namespace OixNodeHelper
                         { "lastError", health.LastError ?? "" },
                         { "version", health.Version ?? "" },
                         { "stage", health.Stage ?? "" },
-                        { "consecutiveEmptyRefreshes", health.ConsecutiveEmptyRefreshes }
+                        { "consecutiveEmptyRefreshes", health.ConsecutiveEmptyRefreshes },
+                        { "coreHealth", health.CoreHealth ?? "Healthy" },
+                        { "coreConnections", health.CoreConnections },
+                        { "coreHandles", health.CoreHandles },
+                        { "coreMemoryMb", health.CoreMemoryMb },
+                        { "ephemeralPortsInUse", health.EphemeralPortsInUse }
                     }
                 },
                 { "nodes", nodeDocuments },

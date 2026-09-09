@@ -10,6 +10,11 @@ class HealthState {
     required this.version,
     required this.stage,
     required this.consecutiveEmptyRefreshes,
+    required this.coreHealth,
+    required this.coreConnections,
+    required this.coreHandles,
+    required this.coreMemoryMb,
+    required this.ephemeralPortsInUse,
   });
 
   factory HealthState.fromJson(Map<String, dynamic> json) => HealthState(
@@ -22,6 +27,14 @@ class HealthState {
         stage: json['stage'] as String? ?? '',
         consecutiveEmptyRefreshes:
             (json['consecutiveEmptyRefreshes'] as num?)?.toInt() ?? 0,
+        // Absent on hosts older than the core watchdog; treat as healthy so an
+        // older Host keeps working with a newer GUI.
+        coreHealth: json['coreHealth'] as String? ?? 'Healthy',
+        coreConnections: (json['coreConnections'] as num?)?.toInt() ?? 0,
+        coreHandles: (json['coreHandles'] as num?)?.toInt() ?? 0,
+        coreMemoryMb: (json['coreMemoryMb'] as num?)?.toInt() ?? 0,
+        ephemeralPortsInUse:
+            (json['ephemeralPortsInUse'] as num?)?.toInt() ?? 0,
       );
 
   final String status;
@@ -32,6 +45,13 @@ class HealthState {
   final String version;
   final String stage;
   final int consecutiveEmptyRefreshes;
+  final String coreHealth;
+  final int coreConnections;
+  final int coreHandles;
+  final int coreMemoryMb;
+  final int ephemeralPortsInUse;
+
+  bool get coreDegraded => coreHealth == 'Degraded' || coreHealth == 'Critical';
 
   DateTime? get lastRefresh {
     if (lastRefreshUtc.isEmpty) return null;
@@ -111,7 +131,7 @@ class HostSettings {
         providerPort: (json['providerPort'] as num?)?.toInt() ?? 6172,
         baseNodePort: (json['baseNodePort'] as num?)?.toInt() ?? 7200,
         maxNodes: (json['maxNodes'] as num?)?.toInt() ?? 100,
-        pollSeconds: (json['pollSeconds'] as num?)?.toInt() ?? 60,
+        pollSeconds: (json['pollSeconds'] as num?)?.toInt() ?? 300,
         includeRegex: json['includeRegex'] as String? ?? '',
         excludeRegex: json['excludeRegex'] as String? ?? '',
         oixParams: json['oixParams'] as String? ?? '',

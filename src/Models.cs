@@ -28,7 +28,7 @@ namespace OixNodeHelper
                 ProviderPort = 6172,
                 BaseNodePort = 7200,
                 MaxNodes = 100,
-                PollSeconds = 60,
+                PollSeconds = 300,
                 IncludeRegex = "",
                 ExcludeRegex = "",
                 OixParams = "",
@@ -57,6 +57,16 @@ namespace OixNodeHelper
         public string Name { get; set; }
         public string Type { get; set; }
         public int Port { get; set; }
+
+        // Mirrors what the upstream node actually advertises. Claiming UDP a node
+        // does not have makes FlClash send UDP that dies upstream, which shows up
+        // as QUIC and proxied-DNS stalls rather than a clean failure.
+        public bool Udp { get; set; }
+
+        public NodeInfo()
+        {
+            Udp = true;
+        }
     }
 
     public sealed class PortEntry
@@ -86,5 +96,10 @@ namespace OixNodeHelper
         public string Version { get; set; }
         public string Stage { get; set; }
         public int ConsecutiveEmptyRefreshes { get; set; }
+        public string CoreHealth { get; set; }
+        public int CoreConnections { get; set; }
+        public int CoreHandles { get; set; }
+        public int CoreMemoryMb { get; set; }
+        public int EphemeralPortsInUse { get; set; }
     }
 }

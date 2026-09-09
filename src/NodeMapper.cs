@@ -75,7 +75,7 @@ namespace OixNodeHelper
                         used.Add(port);
                     }
                     entry.LastSeenUtc = now;
-                    result.Add(new NodeInfo { Name = node.Name, Type = node.Type, Port = entry.Port });
+                    result.Add(new NodeInfo { Name = node.Name, Type = node.Type, Port = entry.Port, Udp = node.Udp });
                 }
                 JsonFiles.Save(_path, _document);
                 return result;
