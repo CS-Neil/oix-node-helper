@@ -31,6 +31,33 @@ void main() {
     expect(snapshot.nodes.single.port, 7200);
   });
 
+  test('subscription parameters normalize to the core fragment form', () {
+    expect(normalizeOixParams('&mode=premium&tfo=true'), '&mode=premium&tfo=true');
+    expect(normalizeOixParams('mode=premium'), '&mode=premium');
+    expect(normalizeOixParams('?mode=premium&love=1'), '&mode=premium&love=1');
+    expect(normalizeOixParams('   '), '');
+    expect(normalizeOixParams(null), '');
+  });
+
+  test('health reads the effective subscription parameters', () {
+    final health = HealthState.fromJson(const {
+      'oixParamsEffective': '&mode=premium&tfo=true',
+      'oixParamsDefault': '&mode=premium',
+      'oixParamsSource': 'file',
+    });
+
+    expect(health.oixParamsEffective, '&mode=premium&tfo=true');
+    expect(health.oixParamsDefault, '&mode=premium');
+    expect(health.oixParamsSource, 'file');
+  });
+
+  test('an older host without subscription parameters still parses', () {
+    final health = HealthState.fromJson(const {'coreRunning': true});
+
+    expect(health.oixParamsEffective, '');
+    expect(health.oixParamsDefault, '');
+  });
+
   test('settings never serializes an absent access token', () {
     const settings = HostSettings(
       corePath: 'mihomo-oix.exe',

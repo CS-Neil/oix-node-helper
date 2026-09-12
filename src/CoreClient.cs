@@ -125,11 +125,72 @@ namespace OixNodeHelper
             }
         }
 
-        public void SetOixOptions(AppSettings settings, CredentialBundle credentials)
+        public OixOptions GetOixOptions(AppSettings settings, CredentialBundle credentials)
         {
-            if (String.IsNullOrWhiteSpace(settings.OixParams)) return;
-            string json = _serializer.Serialize(new Dictionary<string, object> { { "params", settings.OixParams } });
-            Request(settings.ControllerUrl + "/oix/options", "PUT", credentials.ControllerSecret, Encoding.UTF8.GetBytes(json), 10000);
+            string json = Request(settings.ControllerUrl + "/oix/options", "GET", credentials.ControllerSecret, null);
+            return ParseOixOptions(json);
+        }
+
+        // Pushes the configured subscription parameters and returns what the core
+        // ended up with. An empty setting means "whatever the plan gives me", which
+        // is NOT the same as submitting an empty string: the core treats an empty
+        // write as "this account has no params" and drops the plan defaults with it.
+        // So an empty setting replays default_params instead of clearing.
+        public OixOptions ApplyOixOptions(AppSettings settings, CredentialBundle credentials)
+        {
+            OixOptions current;
+            try
+            {
+                current = GetOixOptions(settings, credentials);
+            }
+            catch (WebException)
+            {
+                // A core without the options route cannot be steered at all. Keep the
+                // refresh going rather than failing the whole transaction over it.
+                if (String.IsNullOrWhiteSpace(settings.OixParams)) return new OixOptions();
+                current = null;
+            }
+
+            string desired = NormalizeOixParams(settings.OixParams);
+            if (desired.Length == 0)
+            {
+                if (current == null) return new OixOptions();
+                desired = NormalizeOixParams(current.DefaultParams);
+            }
+
+            string body = _serializer.Serialize(new Dictionary<string, object> { { "params", desired } });
+            string json = Request(settings.ControllerUrl + "/oix/options", "PUT", credentials.ControllerSecret,
+                Encoding.UTF8.GetBytes(body), 10000);
+            return ParseOixOptions(json);
+        }
+
+        internal OixOptions ParseOixOptions(string json)
+        {
+            Dictionary<string, object> root = _serializer.DeserializeObject(json) as Dictionary<string, object>;
+            if (root == null) throw new InvalidDataException("Core /oix/options response is invalid.");
+            return new OixOptions
+            {
+                Params = GetString(root, "params"),
+                DefaultParams = GetString(root, "default_params"),
+                Source = GetString(root, "source")
+            };
+        }
+
+        // Accepts what a user is likely to paste from a subscription URL -- a bare
+        // "love=1", a "?love=1" query string or a full "&a=1&b=2" fragment -- and
+        // returns the "&a=1&b=2" form the core expects.
+        internal static string NormalizeOixParams(string value)
+        {
+            if (String.IsNullOrWhiteSpace(value)) return "";
+            string[] pairs = value.Trim().Split(new char[] { '&', '?' }, StringSplitOptions.RemoveEmptyEntries);
+            List<string> cleaned = new List<string>();
+            foreach (string pair in pairs)
+            {
+                string item = pair.Trim();
+                if (item.Length > 0) cleaned.Add(item);
+            }
+            if (cleaned.Count == 0) return "";
+            return "&" + String.Join("&", cleaned.ToArray());
         }
 
         private static Regex CompileOptional(string value)

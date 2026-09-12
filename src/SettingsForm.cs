@@ -91,7 +91,7 @@ namespace OixNodeHelper
             AddRow(fields, ref row, "空节点确认次数", _emptyRefreshThreshold, null);
             AddRow(fields, ref row, "包含正则（可空）", _includeRegex, null);
             AddRow(fields, ref row, "排除正则（可空）", _excludeRegex, null);
-            AddRow(fields, ref row, "OIX_PARAMS（可空）", _oixParams, null);
+            AddRow(fields, ref row, "订阅参数（可空，如 &mode=premium）", _oixParams, null);
 
             FlowLayoutPanel checks = new FlowLayoutPanel();
             checks.AutoSize = true;

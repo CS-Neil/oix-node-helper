@@ -33,6 +33,7 @@ namespace OixNodeHelper
         private string _stage = "正在启动";
         private bool _coreReachable;
         private CoreHealthSample _coreHealth = new CoreHealthSample();
+        private OixOptions _oixOptions = new OixOptions();
         private int _criticalSamples;
         private DateTime _lastWatchdogRestartUtc = DateTime.MinValue;
         private DateTime _lastDegradedWarningUtc = DateTime.MinValue;
@@ -156,7 +157,9 @@ namespace OixNodeHelper
                 if (!WaitForCore(settings, credentials, 30000))
                     throw new InvalidOperationException("Cannot reach core controller at " + settings.ControllerUrl + ".");
                 lock (_sync) _coreReachable = true;
-                Retry(delegate { _coreClient.SetOixOptions(settings, credentials); }, 3);
+                SetStage("应用订阅参数");
+                OixOptions oixOptions = Retry(delegate { return _coreClient.ApplyOixOptions(settings, credentials); }, 3);
+                lock (_sync) _oixOptions = oixOptions;
 
                 if (refreshProviders)
                 {
@@ -470,7 +473,10 @@ namespace OixNodeHelper
                     CoreConnections = _coreHealth.Connections,
                     CoreHandles = _coreHealth.Handles,
                     CoreMemoryMb = _coreHealth.MemoryMb,
-                    EphemeralPortsInUse = _coreHealth.EphemeralPortsInUse
+                    EphemeralPortsInUse = _coreHealth.EphemeralPortsInUse,
+                    OixParamsEffective = _oixOptions.Params ?? "",
+                    OixParamsDefault = _oixOptions.DefaultParams ?? "",
+                    OixParamsSource = _oixOptions.Source ?? ""
                 };
             }
         }
@@ -515,6 +521,27 @@ namespace OixNodeHelper
             if (settings.BaseNodePort + settings.MaxNodes >= 65535) throw new ArgumentException("Node port range exceeds 65535.");
             if (settings.ProviderPort >= settings.BaseNodePort && settings.ProviderPort < settings.BaseNodePort + settings.MaxNodes)
                 throw new ArgumentException("Provider port overlaps the node port range.");
+            ValidateOixParams(settings.OixParams);
+        }
+
+        // The value is spliced into the managed subscription URL by the core, so a
+        // malformed pair silently changes which nodes come back instead of failing.
+        internal static void ValidateOixParams(string value)
+        {
+            string normalized = CoreClient.NormalizeOixParams(value);
+            if (normalized.Length == 0) return;
+            if (normalized.Length > 512) throw new ArgumentException("订阅参数过长，请控制在 512 个字符以内。");
+            foreach (string pair in normalized.Substring(1).Split('&'))
+            {
+                int separator = pair.IndexOf('=');
+                if (separator <= 0 || separator == pair.Length - 1)
+                    throw new ArgumentException("订阅参数必须是 key=value 形式，例如 &mode=premium。出错的片段：" + pair);
+                foreach (char character in pair)
+                {
+                    if (Char.IsWhiteSpace(character) || character == '#')
+                        throw new ArgumentException("订阅参数不能包含空格或 #。出错的片段：" + pair);
+                }
+            }
         }
 
         private static void ApplyAutoStart(AppSettings settings)

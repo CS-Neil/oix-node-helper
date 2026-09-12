@@ -50,7 +50,7 @@ HostBridge 支持以下方法：
 ## 后端组件
 
 - `CoreSupervisor`：通过公开的 `-oix-token`、`-oix-provider-name` 参数启动官方核心；执行配置预检并用 Job Object 管理生命周期。
-- `CoreClient`：使用标准 Controller API 刷新 Provider、从 `/providers/proxies` 的 `oixCloud` Provider 读取节点、设置 `/oix/options`，并热加载 `/configs?force=true`。全局 `/proxies` 不作为节点来源。
+- `CoreClient`：使用标准 Controller API 刷新 Provider、从 `/providers/proxies` 的 `oixCloud` Provider 读取节点、读写 `/oix/options`，并热加载 `/configs?force=true`。全局 `/proxies` 不作为节点来源。`/oix/options` 的 `params` 是拼接到 managed subscription 地址后面的查询片段，决定上游返回哪些节点；`default_params` 是套餐自带值。写入空字符串会被核心理解成「该账户没有参数」并连套餐默认值一起丢弃，所以设置留空时改为回填 `default_params`。核心在每次写入后会补回自己的保留键（`tfo`），因此生效值始终是提交值的超集。
 - `RuntimeConfigBuilder`：从零生成助手专用最小 YAML；为每个稳定端口生成隐藏 `select` 组，通过 `use: [oixCloud]` 引入 Provider，再让 listener 引用该组。运行配置带 schema 标记。配置里包含核心自己的 DoH 解析器：核心绝不使用 Windows 系统解析器，否则运行中的 FlClash TUN 会用 fake-ip 假地址回答核心对自己上游的解析，把流量绕回助手形成回环。上游写成 IP 字面量的 DoH，因为 `tun.dns-hijack` 会拦截经 TUN 出去的 UDP 53。
 - `CoreHealthMonitor`：通过 `GetExtendedTcpTable` 采样核心的套接字数、句柄数、内存和系统临时端口占用。回环会持续泄漏永远握不上手的连接，直到临时端口耗尽、所有新连接挂起；监听端口此时仍在，所以这些指标是唯一的早期信号。异常时告警，连续告急时由 `AppController` 走既有重启路径重启核心。
 - `NodeMapper`：保存节点名到本地端口的映射，支持保留期和最久未使用回收。
@@ -60,9 +60,11 @@ HostBridge 支持以下方法：
 ## 刷新事务
 
 ```text
+       应用订阅过滤参数（/oix/options）
+                    |
 官方核心依据 Token 刷新 oixCloud Provider
                     |
-            读取并过滤节点
+        读取节点并按包含/排除正则过滤
                     |
       分配稳定端口与隐藏路由组
                     |

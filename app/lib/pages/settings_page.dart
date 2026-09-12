@@ -235,7 +235,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             _Section(
                               icon: Icons.filter_alt_rounded,
                               title: '筛选与高级选项',
-                              description: '正则表达式留空表示不过滤。',
+                              description:
+                                  '订阅参数决定官方返回哪些节点，正则表达式再在本地筛一遍。两者留空都表示不过滤。',
                               children: [
                                 TextFormField(
                                   controller: _includeRegex,
@@ -256,9 +257,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                 const SizedBox(height: 12),
                                 TextFormField(
                                   controller: _oixParams,
+                                  validator: _validateOixParams,
+                                  autovalidateMode:
+                                      AutovalidateMode.onUserInteraction,
                                   decoration: const InputDecoration(
-                                    labelText: 'OIX_PARAMS',
-                                    prefixIcon: Icon(Icons.code_rounded),
+                                    labelText: '订阅过滤参数',
+                                    hintText: '&mode=premium&love=1',
+                                    helperText:
+                                        '拼接到 OixCloud 订阅地址后面，决定官方返回哪些节点。留空表示使用套餐默认值。',
+                                    helperMaxLines: 3,
+                                    prefixIcon: Icon(Icons.tune_rounded),
+                                  ),
+                                ),
+                                _OixParamsReadout(
+                                  health: ref
+                                      .watch(snapshotProvider)
+                                      .value
+                                      ?.health,
+                                  onUseDefault: (value) => setState(
+                                    () => _oixParams.text = value,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -314,6 +331,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   String? _required(String? value) =>
       value == null || value.trim().isEmpty ? '此项不能为空' : null;
 
+  // Mirrors AppController.ValidateOixParams so a malformed fragment is caught
+  // before it reaches the Host, where it would otherwise silently change which
+  // nodes the subscription returns.
+  String? _validateOixParams(String? value) {
+    final normalized = normalizeOixParams(value);
+    if (normalized.isEmpty) return null;
+    if (normalized.length > 512) return '订阅参数过长，请控制在 512 个字符以内';
+    for (final pair in normalized.substring(1).split('&')) {
+      final separator = pair.indexOf('=');
+      if (separator <= 0 || separator == pair.length - 1) {
+        return '必须是 key=value 形式，例如 &mode=premium（出错：$pair）';
+      }
+      if (pair.contains('#') || pair.contains(RegExp(r'\s'))) {
+        return '不能包含空格或 #（出错：$pair）';
+      }
+    }
+    return null;
+  }
+
   int _number(TextEditingController controller) =>
       int.parse(controller.text.trim());
 
@@ -328,7 +364,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       pollSeconds: _number(_pollSeconds),
       includeRegex: _includeRegex.text.trim(),
       excludeRegex: _excludeRegex.text.trim(),
-      oixParams: _oixParams.text.trim(),
+      oixParams: normalizeOixParams(_oixParams.text),
       portRetentionDays: _number(_retentionDays),
       emptyRefreshThreshold: _number(_emptyThreshold),
       startWithWindows: _startWithWindows,
@@ -354,6 +390,71 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         SnackBar(content: Text(error?.toString() ?? '保存失败')),
       );
     }
+  }
+}
+
+/// Shows what the core is actually sending upstream. Without it the field can
+/// read as empty while the account plan is quietly contributing parameters of
+/// its own, which is exactly how a smaller-than-expected node count hides.
+class _OixParamsReadout extends StatelessWidget {
+  const _OixParamsReadout({required this.health, required this.onUseDefault});
+
+  final HealthState? health;
+  final ValueChanged<String> onUseDefault;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = health;
+    if (state == null || state.oixParamsEffective.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final planDefault = state.oixParamsDefault;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text('核心当前生效', style: muted),
+              SelectableText(
+                state.oixParamsEffective,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'Consolas',
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '核心会自动补回它保留的键（例如 tfo），所以生效值通常比上面填的多。',
+            style: muted,
+          ),
+          if (planDefault.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('套餐默认 $planDefault', style: muted),
+                ),
+                TextButton(
+                  onPressed: () => onUseDefault(planDefault),
+                  child: const Text('填入默认值'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

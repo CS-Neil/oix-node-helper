@@ -15,6 +15,9 @@ class HealthState {
     required this.coreHandles,
     required this.coreMemoryMb,
     required this.ephemeralPortsInUse,
+    required this.oixParamsEffective,
+    required this.oixParamsDefault,
+    required this.oixParamsSource,
   });
 
   factory HealthState.fromJson(Map<String, dynamic> json) => HealthState(
@@ -35,6 +38,11 @@ class HealthState {
         coreMemoryMb: (json['coreMemoryMb'] as num?)?.toInt() ?? 0,
         ephemeralPortsInUse:
             (json['ephemeralPortsInUse'] as num?)?.toInt() ?? 0,
+        // Absent on hosts older than the subscription-parameter feature; an empty
+        // string simply hides the effective-parameter readout.
+        oixParamsEffective: json['oixParamsEffective'] as String? ?? '',
+        oixParamsDefault: json['oixParamsDefault'] as String? ?? '',
+        oixParamsSource: json['oixParamsSource'] as String? ?? '',
       );
 
   final String status;
@@ -50,6 +58,9 @@ class HealthState {
   final int coreHandles;
   final int coreMemoryMb;
   final int ephemeralPortsInUse;
+  final String oixParamsEffective;
+  final String oixParamsDefault;
+  final String oixParamsSource;
 
   bool get coreDegraded => coreHealth == 'Degraded' || coreHealth == 'Critical';
 
@@ -183,6 +194,22 @@ class HostException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Accepts what a user is likely to paste out of a subscription URL — a bare
+/// `love=1`, a `?love=1` query string, or a full `&a=1&b=2` fragment — and
+/// returns the `&a=1&b=2` form the core expects. Mirrors
+/// `CoreClient.NormalizeOixParams` on the Host side.
+String normalizeOixParams(String? value) {
+  if (value == null) return '';
+  final pairs = value
+      .trim()
+      .split(RegExp(r'[&?]'))
+      .map((pair) => pair.trim())
+      .where((pair) => pair.isNotEmpty)
+      .toList(growable: false);
+  if (pairs.isEmpty) return '';
+  return '&${pairs.join('&')}';
 }
 
 Map<String, dynamic> decodeJsonObject(String line) {

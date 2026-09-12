@@ -52,6 +52,27 @@ namespace OixNodeHelper
         }
     }
 
+    // Mirrors GET/PUT /oix/options on the official core. Params is the query
+    // fragment the core appends to the managed subscription URL, for example
+    // "&mode=premium&tfo=true". DefaultParams is what the account plan supplies
+    // on its own, and Source reports where the core took the value from.
+    //
+    // The core re-injects its own reserved keys (tfo) after every write, so the
+    // effective Params is always a superset of what the helper submits.
+    public sealed class OixOptions
+    {
+        public string Params { get; set; }
+        public string DefaultParams { get; set; }
+        public string Source { get; set; }
+
+        public OixOptions()
+        {
+            Params = "";
+            DefaultParams = "";
+            Source = "";
+        }
+    }
+
     public sealed class NodeInfo
     {
         public string Name { get; set; }
@@ -101,5 +122,15 @@ namespace OixNodeHelper
         public int CoreHandles { get; set; }
         public int CoreMemoryMb { get; set; }
         public int EphemeralPortsInUse { get; set; }
+        public string OixParamsEffective { get; set; }
+        public string OixParamsDefault { get; set; }
+        public string OixParamsSource { get; set; }
+
+        public HealthDocument()
+        {
+            OixParamsEffective = "";
+            OixParamsDefault = "";
+            OixParamsSource = "";
+        }
     }
 }

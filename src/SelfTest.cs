@@ -21,6 +21,7 @@ namespace OixNodeHelper
             TestServer(failures);
             TestCoreHealthThresholds(failures);
             TestPollSecondsMigration(failures);
+            TestOixParams(failures);
             TestRefreshSchedule(failures);
             TestCoreValidation(failures);
             if (failures.Count == 0)
@@ -226,6 +227,43 @@ namespace OixNodeHelper
             // dial hangs, which FlClash reports as a timeout on every local node.
             Assert(CoreHealthMonitor.Evaluate(120, 800, 90, CoreHealthMonitor.CriticalEphemeralPorts) == CoreHealthLevel.Critical,
                 "ephemeral port exhaustion was not reported as critical", failures);
+        }
+
+        private static void TestOixParams(List<string> failures)
+        {
+            try
+            {
+                Assert(CoreClient.NormalizeOixParams("&mode=premium&tfo=true") == "&mode=premium&tfo=true",
+                    "a canonical params fragment was rewritten", failures);
+                Assert(CoreClient.NormalizeOixParams("mode=premium") == "&mode=premium",
+                    "a bare pair did not gain its leading separator", failures);
+                Assert(CoreClient.NormalizeOixParams("?mode=premium&love=1") == "&mode=premium&love=1",
+                    "a pasted query string was not normalized", failures);
+                Assert(CoreClient.NormalizeOixParams("  ") == "", "blank params did not normalize to empty", failures);
+                Assert(CoreClient.NormalizeOixParams(null) == "", "null params did not normalize to empty", failures);
+
+                string json = "{\"params\":\"\\u0026mode=premium\\u0026tfo=true\"," +
+                    "\"default_params\":\"\\u0026mode=premium\",\"source\":\"file\"}";
+                OixOptions options = new CoreClient().ParseOixOptions(json);
+                Assert(options.Params == "&mode=premium&tfo=true", "effective params were not parsed", failures);
+                Assert(options.DefaultParams == "&mode=premium", "plan default params were not parsed", failures);
+                Assert(options.Source == "file", "the params source was not parsed", failures);
+
+                AppController.ValidateOixParams("");
+                AppController.ValidateOixParams("&mode=premium&love=1");
+                Assert(Rejects("&mode"), "a pair without a value was accepted", failures);
+                Assert(Rejects("&=premium"), "a pair without a key was accepted", failures);
+                Assert(Rejects("&mode="), "a pair with an empty value was accepted", failures);
+                Assert(Rejects("&mode=pre mium"), "a pair containing a space was accepted", failures);
+                Assert(Rejects("&mode=premium#x"), "a pair containing a fragment marker was accepted", failures);
+            }
+            catch (Exception ex) { failures.Add("oix params handling threw: " + ex.Message); }
+        }
+
+        private static bool Rejects(string value)
+        {
+            try { AppController.ValidateOixParams(value); return false; }
+            catch (ArgumentException) { return true; }
         }
 
         private static void TestPollSecondsMigration(List<string> failures)

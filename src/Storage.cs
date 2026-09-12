@@ -124,7 +124,9 @@ namespace OixNodeHelper
             if (value.CorePath == null) value.CorePath = "";
             if (value.IncludeRegex == null) value.IncludeRegex = "";
             if (value.ExcludeRegex == null) value.ExcludeRegex = "";
-            if (value.OixParams == null) value.OixParams = "";
+            // Stored canonically so the GUI, the core and the logs all show the same
+            // "&key=value" form no matter how the user pasted it in.
+            value.OixParams = CoreClient.NormalizeOixParams(value.OixParams);
             if (value.FrontendPath == null) value.FrontendPath = "";
             if (value.PortRetentionDays < 1 || value.PortRetentionDays > 365) value.PortRetentionDays = 14;
             if (value.EmptyRefreshThreshold < 1 || value.EmptyRefreshThreshold > 10) value.EmptyRefreshThreshold = 3;

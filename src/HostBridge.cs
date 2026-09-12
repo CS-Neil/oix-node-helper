@@ -234,7 +234,10 @@ namespace OixNodeHelper
                         { "coreConnections", health.CoreConnections },
                         { "coreHandles", health.CoreHandles },
                         { "coreMemoryMb", health.CoreMemoryMb },
-                        { "ephemeralPortsInUse", health.EphemeralPortsInUse }
+                        { "ephemeralPortsInUse", health.EphemeralPortsInUse },
+                        { "oixParamsEffective", health.OixParamsEffective ?? "" },
+                        { "oixParamsDefault", health.OixParamsDefault ?? "" },
+                        { "oixParamsSource", health.OixParamsSource ?? "" }
                     }
                 },
                 { "nodes", nodeDocuments },
